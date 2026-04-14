@@ -380,6 +380,39 @@ scripts/
 
 ---
 
+## Choosing the optimisation solver
+
+All fitting functions expose a `method` argument that is passed directly to `lmfit.minimize`, giving access to any solver supported by lmfit. The default is `"least_squares"`.
+
+### Log-space transformation and gradient solvers
+
+Regardless of the chosen solver, parameters are always transformed to log space before optimisation and back to linear space afterwards (see *Design notes* below). This transformation specifically enhances gradient-based solvers such as `"least_squares"` and `"leastsq"`. Because rational polynomial coefficients can span many orders of magnitude, the loss landscape in linear space is highly anisotropic — the gradient is dominated by the largest parameters and the smallest ones are nearly invisible. In log space the landscape becomes much more uniform, gradient directions are meaningful for all parameters, and convergence is significantly faster and more reliable.
+
+### Global solvers
+
+Global solvers such as `"basinhopping"` and `"differential_evolution"` explore the parameter space without relying on gradients, so they benefit less from the log-space transformation. They are useful for investigating complex cost function landscapes or verifying that `fit_multistart` has found the true global minimum. Note that global solvers are considerably slower than `"least_squares"` for this problem size.
+
+```python
+# Gradient-based (default) — fast, benefits most from log-space
+result, fit = fit_single(omega, impedance, model, params, weights,
+                         reg_factor=1e-8, method="least_squares",
+                         max_nfev=50000)
+
+# Global search — slow, useful for landscape exploration
+result, fit = fit_single(omega, impedance, model, params, weights,
+                         reg_factor=1e-8, method="basinhopping",
+                         niter=200)
+
+# Global search, sequential — applies the same solver to every spectrum
+results, fits = fit_sequential(omega, impedance_set, model, params, weights,
+                               reg_factor=1e-8, method="differential_evolution",
+                               maxiter=500)
+```
+
+Any extra keyword arguments beyond `method` are forwarded to the underlying solver. Refer to the [lmfit minimizer documentation](https://lmfit.github.io/lmfit-py/fitting.html) for the full list of available methods and their specific options.
+
+---
+
 ## Design notes
 
 **Log-space optimization** — fitting is performed in log parameter space internally. This gives the optimizer multiplicative steps rather than additive ones, which is better suited to parameters that span many orders of magnitude. The L1 penalty is also applied in log space, which penalizes the order of magnitude of each coefficient rather than its raw magnitude, giving balanced regularization across all parameters. Parameters are transformed back to linear space before being returned.
