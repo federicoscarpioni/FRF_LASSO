@@ -74,12 +74,17 @@ def fit_single(
     params: lmfit.Parameters,
     weights: np.ndarray,
     reg_factor: float = 1e-8,
+    method: str = "least_squares",
+    **fit_kws,
 ) -> tuple:
     """
     Fit a single impedance spectrum to a rational polynomial model.
 
-    Optimisation is performed in log parameter space (see transformations.py)
-    using lmfit's least_squares method.  The result is converted back to
+    Optimisation is performed in log parameter space (see transformations.py).
+    The log transform is active regardless of the chosen solver, but it
+    specifically benefits gradient-based methods (``least_squares``,
+    ``leastsq``) by making the loss landscape more uniform across parameters
+    that span many orders of magnitude.  The result is converted back to
     linear space before being returned.
 
     Parameters
@@ -100,6 +105,20 @@ def fit_single(
         L1 regularization strength.  Controls the penalty on coefficient
         magnitudes in log space.  Set to 0 to disable (not recommended —
         the optimisation typically diverges without regularization).
+    method : str
+        Optimisation method passed to ``lmfit.minimize``.  Default is
+        ``"least_squares"`` (gradient-based, works best with log-space
+        transformation).  Any method supported by lmfit is accepted, e.g.
+        ``"basinhopping"``, ``"differential_evolution"``, ``"nelder"``.
+        See the lmfit documentation for the full list.
+    **fit_kws
+        Additional keyword arguments passed directly to ``lmfit.minimize``
+        and forwarded to the underlying solver.  Use these to control
+        method-specific convergence parameters, e.g.:
+
+        - ``max_nfev=50000``  for ``least_squares``
+        - ``niter=200``       for ``basinhopping``
+        - ``maxiter=1000``    for ``differential_evolution``
 
     Returns
     -------
@@ -121,8 +140,8 @@ def fit_single(
         single_spectrum_residuals,
         log_params,
         args=(omega, impedance, model, weights, reg_factor),
-        method="least_squares",
-        max_nfev=50000,
+        method=method,
+        **fit_kws,
     )
 
     result.params = to_linear(result.params)
@@ -140,6 +159,8 @@ def fit_multistart(
     param_min: float = 1e-9,
     param_max: float = 1e6,
     seed: int = 42,
+    method: str = "least_squares",
+    **fit_kws,
 ) -> tuple:
     """
     Fit a single impedance spectrum from multiple random starting points.
@@ -147,7 +168,7 @@ def fit_multistart(
     Repeats ``fit_single`` ``n_starts`` times, each time drawing initial
     parameter values log-uniformly from (param_min, param_max).  All results
     are returned so that the caller can assess solution uniqueness and select
-    the best fit (e.g. with ``statistics.consistency_metrics``).
+    the best fit (e.g. with ``statistics.multistart_statistics``).
 
     Parameters
     ----------
@@ -170,6 +191,12 @@ def fit_multistart(
         Upper bound for random parameter initialisation (linear space).
     seed : int
         Random seed for reproducibility.
+    method : str
+        Optimisation method forwarded to ``fit_single``.  See
+        ``fit_single`` docstring for details.
+    **fit_kws
+        Additional keyword arguments forwarded to ``fit_single`` and
+        then to ``lmfit.minimize``.
 
     Returns
     -------
@@ -183,7 +210,8 @@ def fit_multistart(
 
     for _ in range(n_starts):
         params = _make_random_params(model, param_min, param_max, rng)
-        result, fit = fit_single(omega, impedance, model, params, weights, reg_factor)
+        result, fit = fit_single(omega, impedance, model, params, weights,
+                                 reg_factor, method=method, **fit_kws)
         results.append(result)
         fits.append(fit)
 
@@ -197,6 +225,8 @@ def fit_sequential(
     params: lmfit.Parameters,
     weights: np.ndarray,
     reg_factor: float = 1e-8,
+    method: str = "least_squares",
+    **fit_kws,
 ) -> tuple:
     """
     Fit a time-ordered sequence of impedance spectra sequentially.
@@ -228,6 +258,12 @@ def fit_sequential(
         See module docstring for weighting strategy guidance.
     reg_factor : float
         L1 regularization strength applied to every spectrum.
+    method : str
+        Optimisation method forwarded to ``fit_single`` for every spectrum.
+        See ``fit_single`` docstring for details.
+    **fit_kws
+        Additional keyword arguments forwarded to ``fit_single`` and
+        then to ``lmfit.minimize``.
 
     Returns
     -------
@@ -260,7 +296,8 @@ def fit_sequential(
     for t in range(n_spectra):
         impedance = impedance_set[:, t]
         w = weights if weights.ndim == 1 else weights[:, t]
-        result, fit = fit_single(omega, impedance, model, current_params, w, reg_factor)
+        result, fit = fit_single(omega, impedance, model, current_params, w,
+                                 reg_factor, method=method, **fit_kws)
         results.append(result)
         fits.append(fit)
         current_params = result.params.copy()
