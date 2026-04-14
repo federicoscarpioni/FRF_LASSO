@@ -1,6 +1,6 @@
 # frf_lasso
 
-A Python library for fitting electrochemical impedance spectra (EIS) to rational polynomial models with L1 (LASSO) regularization, built on top of [lmfit](https://lmfit.github.io/lmfit-py/).
+A Python library for fitting frequency response functions (FRF) to rational polynomial models with L1 (LASSO) regularization, built on top of [lmfit](https://lmfit.github.io/lmfit-py/). It is specifically designed for electrochemical impedance spectra (EIS) measured continually.
 
 ---
 
