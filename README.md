@@ -13,13 +13,15 @@ Z(ω) = P(s) / Q(s)
 
 where:
   s = √(i·ω)
-  P(s) = a₀ + a₁s + a₂s² + ... + aₙsⁿ   (numerator)
-  Q(s) = 1  + b₁s + b₂s² + ... + bₙsⁿ   (denominator)
+  P(s) = a₀ + a₁s + a₂s² + ... + aₙsⁿ   (numerator, order n)
+  Q(s) = 1  + b₁s + b₂s² + ... + bₘsᵐ   (denominator, order m)
 ```
 
-The model order `n` controls the complexity of the fit and must be chosen by the user (typically by comparing fit statistics across several orders).
+The leading denominator coefficient is fixed to 1 to make the model identifiable — without this constraint the numerator and denominator can scale arbitrarily while their ratio stays constant. Numerator and denominator orders `n` and `m` can in principle differ; for electrochemical systems `n = m` is the standard choice and the library default.
 
-**Why LASSO regularization?** Without it, the numerator and denominator polynomials tend to compensate each other, driving coefficients to arbitrarily large values while the ratio remains finite. L1 regularization penalizes the magnitude of all coefficients and keeps the optimization well-conditioned. The strength of the penalty is controlled by `reg_factor` and must also be chosen by the user by comparing statistics.
+The model order must be chosen by the user, typically by sweeping over several values and comparing fit statistics (chi-square, AIC, BIC).
+
+**Why LASSO regularization?** Without it, the numerator and denominator coefficients tend to compensate each other, growing to arbitrarily large values while the ratio remains finite. L1 regularization penalizes coefficient magnitudes and keeps the optimization well-conditioned. The regularization strength `reg_factor` must also be chosen by the user by comparing statistics. Setting `reg_factor=0` disables regularization and will typically cause the optimization to diverge.
 
 > **Frequency convention** — all functions in this library expect **angular frequency ω (rad/s)**.
 > Instruments typically report frequency in Hz; convert once before passing data to any library function:
@@ -29,15 +31,12 @@ The model order `n` controls the complexity of the fit and must be chosen by the
 
 ## Features
 
-- Rational polynomial models of orders 4 through 9
+- Rational polynomial models of any order, with independent numerator and denominator orders
 - L1-regularized least-squares fitting via `lmfit`
-- Three fitting strategies:
-  - **Single spectrum** — fit one impedance dataset
-  - **Multi-start** — repeat with random initializations to assess solution uniqueness
-  - **Sequential** — fit a time-series of spectra, using each result to warm-start the next
-- Structured save/load for all fit types, with metadata for later retrieval
-- Chi-square statistics and consistency metrics for model selection
-- Interactive Nyquist plot with spectrum slider
+- Four fitting strategies: single spectrum, multi-start, sequential, simultaneous
+- Structured save/load for all fit types, with `metadata.json` for session identification
+- Statistical tools for model selection on single and time-series datasets
+- Visualization: Nyquist plots, residual plots, interactive spectrum slider, parameter evolution
 
 ---
 
@@ -67,9 +66,8 @@ The library is **format-agnostic**: it expects data already loaded as NumPy arra
 
 ```python
 import numpy as np
-from frf_lasso import fit_single, fit_multistart, fit_sequential
+from frf_lasso import fit_single, make_lmfit_model
 from frf_lasso.io import save_single, load_single
-from frf_lasso.statistics import compare_fits
 from frf_lasso.visualization import nyquist_plot
 
 # --- Load your data (format is up to you) ---
@@ -77,22 +75,25 @@ freq_hz   = np.load("frequencies.npy")            # shape: (N,), in Hz
 omega     = 2 * np.pi * freq_hz                   # convert to rad/s — required by frf_lasso
 impedance = np.load("impedance.npy")              # shape: (N,), complex
 
-# --- Fit a single spectrum ---
-result, fit = fit_single(
-    omega,
-    impedance,
-    order=6,
-    reg_factor=1e-8,
-)
+# --- Create model and initial parameters ---
+model  = make_lmfit_model(num_order=6)
+params = model.make_params()
+for name in model.param_names:
+    params[name].set(value=1.0, min=1e-9, max=1e6)
 
-# --- Inspect the result (standard lmfit interface) ---
+# --- Supply weighting factors ---
+weights = 1 / np.abs(impedance) ** 0.5            # modulus weighting
+
+# --- Fit ---
+result, fit = fit_single(omega, impedance, model, params, weights, reg_factor=1e-8)
 print(result.fit_report())
 
-# --- Save for later ---
-save_single("./results/my_fit", frequencies, impedance, result, fit, order=6, reg_factor=1e-8)
+# --- Save ---
+save_single("./results/my_fit", omega, impedance, model, result, fit,
+            weights, reg_factor=1e-8)
 
 # --- Visualize ---
-nyquist_plot(frequencies, impedance, fit=fit)
+nyquist_plot(impedance, fit=fit)
 ```
 
 ---
@@ -125,23 +126,45 @@ weights = 1 / np.abs(impedance_set) ** 0.5   # shape (N, T)
 
 ## Choosing model order and regularization factor
 
-Neither `order` nor `reg_factor` has a universally correct value. The typical workflow is to sweep over both and compare the fit statistics:
+Neither `num_order` nor `reg_factor` has a universally correct value. The typical workflow is to sweep over both and compare the fit statistics:
 
 ```python
-from frf_lasso import fit_single
+from frf_lasso import fit_single, make_lmfit_model
 from frf_lasso.statistics import compare_fits
 
-results = []
+candidates = []
 for order in [4, 5, 6, 7, 8]:
-    for reg_factor in [1e-10, 1e-8, 1e-6]:
-        result, fit = fit_single(frequencies, impedance, order=order, reg_factor=reg_factor)
-        results.append((order, reg_factor, result, fit))
+    for reg in [1e-10, 1e-8, 1e-6]:
+        model  = make_lmfit_model(num_order=order)
+        params = model.make_params()
+        for name in model.param_names:
+            params[name].set(value=1.0, min=1e-9, max=1e6)
+        result, fit = fit_single(omega, impedance, model, params, weights, reg_factor=reg)
+        candidates.append((order, reg, result))
 
-# Print a summary table (chi2, AIC, BIC, n_params)
-compare_fits(results)
+compare_fits(candidates)   # prints a table sorted by AIC
 ```
 
-A good fit has a low chi-square without requiring an unnecessarily high polynomial order (use AIC/BIC to penalize complexity). If chi-square keeps improving as you lower `reg_factor` toward zero and the fit becomes visually poor, the regularization is doing its job.
+For time-series datasets (sequential fit), use `compare_sequential_fits` instead, which aggregates per-spectrum statistics across all spectra:
+
+```python
+from frf_lasso.statistics import compare_sequential_fits
+
+candidates = []
+for order in [4, 5, 6, 7]:
+    for reg in [1e-10, 1e-8, 1e-6]:
+        model   = make_lmfit_model(num_order=order)
+        params  = model.make_params()
+        for name in model.param_names:
+            params[name].set(value=1.0, min=1e-9, max=1e6)
+        results, fits = fit_sequential(omega, impedance_set, model,
+                                       params, weights, reg_factor=reg)
+        candidates.append((order, reg, results))
+
+compare_sequential_fits(candidates)   # prints cumulative, mean±std, median+IQR
+```
+
+A good fit has low chi-square and AIC without requiring an unnecessarily high polynomial order. If chi-square keeps improving as `reg_factor` approaches zero and the fit becomes visually poor, the regularization is doing its job.
 
 ---
 
@@ -149,40 +172,64 @@ A good fit has a low chi-square without requiring an unnecessarily high polynomi
 
 ### 1. Single spectrum
 
-Fits one impedance dataset with one set of initial parameters. Uses a global search (basin-hopping) followed by local refinement (Levenberg-Marquardt).
+Fits one impedance spectrum from a given starting point using `least_squares` optimization in log parameter space.
 
 ```python
-result, fit = fit_single(frequencies, impedance, order=6, reg_factor=1e-8)
+model  = make_lmfit_model(num_order=6)
+params = model.make_params()
+for name in model.param_names:
+    params[name].set(value=1.0, min=1e-9, max=1e6)
+
+result, fit = fit_single(omega, impedance, model, params, weights, reg_factor=1e-8)
 ```
 
 ### 2. Multi-start
 
-Repeats the single-spectrum fit `n_starts` times with different random initializations. Useful for checking whether the solution is unique or whether the objective function has multiple local minima.
+Repeats `fit_single` `n_starts` times with log-uniformly distributed random initial parameters. All results are returned so the caller can assess whether the optimization landscape has a well-defined global minimum.
 
 ```python
+from frf_lasso import fit_multistart
+from frf_lasso.statistics import multistart_statistics
+from frf_lasso.visualization import multistart_plot, print_multistart_summary
+
 results, fits = fit_multistart(
-    frequencies, impedance,
-    order=6, reg_factor=1e-8,
-    n_starts=50,
+    omega, impedance, model, weights,
+    n_starts=50, reg_factor=1e-8,
+    param_min=1e-9, param_max=1e6,
+    seed=42,
 )
 
-# Check consistency across starts
-from frf_lasso.statistics import consistency_metrics
-metrics = consistency_metrics(results)
-print(metrics)  # CV, ratio of fits within 2× best chi2, etc.
+stats = multistart_statistics(results)
+print_multistart_summary(stats)
+multistart_plot(stats)
 ```
 
 ### 3. Sequential fit
 
-Fits a time-ordered collection of spectra one by one, using the previous result as the starting point for the next. Suitable for battery cycling experiments or any dataset where the impedance evolves slowly over time.
+Fits a time-ordered collection of spectra one by one, using the previous result as the warm start for the next. Suitable for datasets where impedance evolves slowly over time (e.g. battery cycling).
 
 ```python
-# impedance_set: shape (N_freq, N_spectra), complex
-impedance_set = np.load("impedance_set.npy")
+from frf_lasso import fit_sequential
 
+# impedance_set: shape (N_freq, T), complex — one spectrum per column
 results, fits = fit_sequential(
-    frequencies, impedance_set,
-    order=6, reg_factor=1e-8,
+    omega, impedance_set, model, params,
+    weights,                        # (N,) or (N, T)
+    reg_factor=1e-8,
+)
+```
+
+### 4. Simultaneous fit
+
+Jointly optimizes all spectra in a single minimization run with temporal smoothness penalties on parameter evolution. See [Notes on the simultaneous fit](#notes-on-the-simultaneous-fit) for the output structure and statistics caveat.
+
+```python
+from frf_lasso import fit_simultaneous
+
+# seq_results: output of fit_sequential, used to initialize global parameters
+global_result, results, fits = fit_simultaneous(
+    omega, impedance_set, model, seq_results,
+    weights, reg_factor=1e-8, smt_factor=1e-3,
 )
 ```
 
@@ -190,49 +237,117 @@ results, fits = fit_sequential(
 
 ## Saving and loading results
 
-Each fit session is saved as a folder containing the original data, the model metadata, and the lmfit result. This makes it easy to reload and compare sessions later without re-running the fitting.
+Each fit session is saved as a folder. The model is **not** serialized as a binary file — instead, `num_order` and `den_order` are stored in `metadata.json` and the model is recreated with `make_lmfit_model` on load. This keeps the saved data fully human-readable and avoids serialization fragility.
 
+### Folder layouts
+
+**Single:**
 ```
-my_fit_session/
-  metadata.json      ← model_order, reg_factor, chi2, AIC, BIC, fit_type, ...
-  impedance.npy      ← original complex impedance
-  result.json        ← full lmfit result (params, statistics, covariance, ...)
-  fit.npy            ← fitted impedance values
+my_session/
+  metadata.json      ← fit_type, num_order, den_order, reg_factor, chisqr, aic, bic
+  omega.npy          ← angular frequencies (rad/s)
+  impedance.npy      ← complex impedance
+  weights.npy        ← weighting factors
+  result.json        ← full lmfit result (params, statistics)
+  fit.npy            ← fitted impedance
 ```
 
-For multi-start and sequential fits the layout is extended:
-
+**Multi-start and sequential:**
 ```
-my_multistart_session/
+my_session/
   metadata.json
-  impedance.npy
-  fits/
-    fit_000.npy
-    fit_001.npy
-    ...
+  omega.npy
+  impedance(_set).npy
+  weights.npy
   results/
     result_000.json
-    result_001.json
-    ...
+    result_001.json  ...
+  fits/
+    fit_000.npy
+    fit_001.npy      ...
+```
+
+**Simultaneous:**
+```
+my_session/
+  metadata.json      ← includes stats_source: "global"
+  omega.npy
+  impedance_set.npy
+  weights.npy
+  global_result.json ← joint optimization result (authoritative statistics)
+  results/           ← per-spectrum results (statistics inherited from global)
+    result_000.json  ...
+  fits/
+    fit_000.npy      ...
 ```
 
 ### Save/load API
 
-| Fit type | Save | Load |
+| Fit type | Save | Load returns |
 |---|---|---|
-| Single | `save_single(path, ...)` | `load_single(path)` |
-| Multi-start | `save_multistart(path, ...)` | `load_multistart(path)` |
-| Sequential | `save_sequential(path, ...)` | `load_sequential(path)` |
-| Simultaneous | `save_simultaneous(path, ...)` | `load_simultaneous(path)` |
+| Single | `save_single(path, omega, impedance, model, result, fit, weights, reg_factor)` | `omega, impedance, model, result, fit, weights, metadata` |
+| Multi-start | `save_multistart(path, omega, impedance, model, results, fits, weights, reg_factor)` | `omega, impedance, model, results, fits, weights, metadata` |
+| Sequential | `save_sequential(path, omega, impedance_set, model, results, fits, weights, reg_factor)` | `omega, impedance_set, model, results, fits, weights, metadata` |
+| Simultaneous | `save_simultaneous(path, omega, impedance_set, model, global_result, results, fits, weights, reg_factor, smt_factor)` | `omega, impedance_set, model, global_result, results, fits, weights, metadata` |
 
 ```python
 from frf_lasso.io import save_sequential, load_sequential
 
-save_sequential("./results/cycle1", frequencies, impedance_set, results, fits,
-                order=6, reg_factor=1e-8)
+save_sequential("./results/cycle1", omega, impedance_set, model,
+                results, fits, weights, reg_factor=1e-8)
 
 # In a later session:
-frequencies, impedance_set, results, fits, metadata = load_sequential("./results/cycle1")
+omega, impedance_set, model, results, fits, weights, meta = load_sequential("./results/cycle1")
+print(meta["reg_factor"], meta["num_order"])
+```
+
+---
+
+## Statistics
+
+```python
+from frf_lasso.statistics import (
+    compare_fits,             # single-spectrum model selection table
+    compare_sequential_fits,  # time-series model selection table (3 aggregations)
+    multistart_statistics,    # chi2 distribution across random starts
+    param_evolution,          # extract {param: values_across_time} from results list
+    smoothness_metrics,       # gradient and curvature of parameter evolution
+)
+```
+
+`compare_sequential_fits` reports three complementary aggregations of chi2, AIC, and BIC across all spectra:
+
+| Metric | What it shows |
+|---|---|
+| **Cumulative** | Sum across all spectra — equivalent ranking to one joint fit |
+| **Mean ± std** | Average fit quality and spread; sensitive to outlier spectra |
+| **Median + IQR** | Robust aggregation; not pulled by individual bad spectra |
+
+---
+
+## Visualization
+
+```python
+from frf_lasso.visualization import (
+    nyquist_plot,            # single Nyquist plot, optional fit overlay
+    residual_plot,           # weighted real/imag residuals vs frequency
+    slider_plot,             # interactive Nyquist with spectrum slider
+    multistart_plot,         # chi2 distribution panels (histogram, box, sequence)
+    print_multistart_summary,# formatted console report of multistart statistics
+    param_evolution_plot,    # parameter evolution, supports multiple series
+)
+```
+
+All non-interactive functions accept an optional `ax` argument for embedding in larger figures and return `(fig, axes)`. The interactive `slider_plot` returns widget objects that must be kept alive in the caller's scope.
+
+```python
+from frf_lasso.visualization import param_evolution_plot
+
+# Compare sequential and simultaneous parameter evolution on the same axes
+param_evolution_plot({
+    "sequential":    seq_results,
+    "simultaneous":  sim_results,
+})
 ```
 
 ---
@@ -241,22 +356,39 @@ frequencies, impedance_set, results, fits, metadata = load_sequential("./results
 
 ```
 frf_lasso/
-  __init__.py           Public API (fit_single, fit_multistart, fit_sequential)
-  models.py             rational_poly(freq, order, a_coeffs, b_coeffs) → complex Z
-  objective.py          Residual functions (L1 regularization, temporal smoothing)
-  transformations.py    Internal log ↔ linear parameter space conversion
+  __init__.py           fit_single, fit_multistart, fit_sequential,
+                        fit_simultaneous, adapt_params, make_lmfit_model
+  models.py             rational_poly(), make_lmfit_model()
+  objective.py          single_spectrum_residuals(), simultaneous_residuals()
+  transformations.py    to_log(), to_linear()  [internal]
   fitting.py            fit_single(), fit_multistart(), fit_sequential()
-  simultaneous.py       simultaneous_fit() — global joint optimization (experimental)
+  simultaneous.py       fit_simultaneous(), adapt_params()
   io.py                 save_*/load_* for all four fit types
-  statistics.py         chi_square(), consistency_metrics(), compare_fits()
-  visualization.py      nyquist_plot(), error_plot(), slider_plot()
+  statistics.py         compare_fits(), compare_sequential_fits(),
+                        multistart_statistics(), param_evolution(),
+                        smoothness_metrics()
+  visualization.py      nyquist_plot(), residual_plot(), slider_plot(),
+                        multistart_plot(), print_multistart_summary(),
+                        param_evolution_plot()
 
 scripts/
   fit_single_spectrum.py     Example: single fit, sweep over order and reg_factor
   fit_multistart.py          Example: multi-start with consistency analysis
   fit_sequential.py          Example: sequential fit across a time-series
-  fit_simultaneous.py        Example: global simultaneous fit (experimental)
+  fit_simultaneous.py        Example: simultaneous fit (experimental)
 ```
+
+---
+
+## Design notes
+
+**Log-space optimization** — fitting is performed in log parameter space internally. This gives the optimizer multiplicative steps rather than additive ones, which is better suited to parameters that span many orders of magnitude. The L1 penalty is also applied in log space, which penalizes the order of magnitude of each coefficient rather than its raw magnitude, giving balanced regularization across all parameters. Parameters are transformed back to linear space before being returned.
+
+**Positive parameter constraint** — the log-space transformation requires all parameter values to be strictly positive. Initial parameters must have positive values (set `min > 0`). This is not a limitation for typical EIS rational polynomial models.
+
+**Model not serialized** — saved sessions store `num_order` and `den_order` in `metadata.json`. The model is recreated with `make_lmfit_model` on load, rather than serializing the model object. This avoids binary serialization fragility and keeps saved sessions fully human-readable.
+
+**Asymmetric polynomial orders** — `make_lmfit_model(num_order, den_order)` supports different numerator and denominator orders. `den_order` defaults to `num_order` when not specified, which is the standard choice for electrochemical systems.
 
 ---
 
