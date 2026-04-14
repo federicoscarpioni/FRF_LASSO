@@ -305,15 +305,15 @@ print(meta["reg_factor"], meta["num_order"])
 
 ## Statistics
 
-```python
-from frf_lasso.statistics import (
-    compare_fits,             # single-spectrum model selection table
-    compare_sequential_fits,  # time-series model selection table (3 aggregations)
-    multistart_statistics,    # chi2 distribution across random starts
-    param_evolution,          # extract {param: values_across_time} from results list
-    smoothness_metrics,       # gradient and curvature of parameter evolution
-)
-```
+All functions are in `frf_lasso.statistics`.
+
+| Function | Input | What it does |
+|---|---|---|
+| `compare_fits(candidates)` | list of `(order, reg_factor, result)` | Prints an AIC-sorted table for single-spectrum model selection |
+| `compare_sequential_fits(candidates)` | list of `(order, reg_factor, results_list)` | Prints chi2, AIC, BIC tables with three aggregations across all spectra |
+| `multistart_statistics(results)` | list of `MinimizerResult` | Returns a dict with chi2 distribution, CV, consistency ratio, and index of the best result |
+| `param_evolution(results)` | list of `MinimizerResult` | Returns `{param_name: array}` of fitted values across time |
+| `smoothness_metrics(results)` | list of `MinimizerResult` | Returns `{param_name: {gradient, curvature}}` of the parameter trajectories |
 
 `compare_sequential_fits` reports three complementary aggregations of chi2, AIC, and BIC across all spectra:
 
@@ -327,26 +327,24 @@ from frf_lasso.statistics import (
 
 ## Visualization
 
-```python
-from frf_lasso.visualization import (
-    nyquist_plot,            # single Nyquist plot, optional fit overlay
-    residual_plot,           # weighted real/imag residuals vs frequency
-    slider_plot,             # interactive Nyquist with spectrum slider
-    multistart_plot,         # chi2 distribution panels (histogram, box, sequence)
-    print_multistart_summary,# formatted console report of multistart statistics
-    param_evolution_plot,    # parameter evolution, supports multiple series
-)
-```
+All functions are in `frf_lasso.visualization`. All non-interactive functions accept an optional `ax` argument for embedding in larger figures and return `(fig, axes)`.
 
-All non-interactive functions accept an optional `ax` argument for embedding in larger figures and return `(fig, axes)`. The interactive `slider_plot` returns widget objects that must be kept alive in the caller's scope.
+| Function | Description |
+|---|---|
+| `nyquist_plot(impedance, fit=None, ax=None)` | Nyquist plot with optional fit overlay |
+| `residual_plot(omega, impedance, fit, ax=None)` | Percentage residuals (real and imaginary) vs frequency, normalised by \|Z\| |
+| `slider_plot(impedance_set, fits=None)` | Interactive Nyquist plot with a spectrum slider; returns widget objects that must be kept alive in the caller's scope |
+| `multistart_plot(stats)` | Chi-square distribution across random starts (histogram, box plot, sequence) |
+| `print_multistart_summary(stats)` | Formatted console report of multistart statistics (CV, consistency ratio, best trial) |
+| `param_evolution_plot(series, param_names=None)` | Parameter evolution across time; `series` is a dict of label → results list, enabling overlay of multiple fits |
 
 ```python
 from frf_lasso.visualization import param_evolution_plot
 
-# Compare sequential and simultaneous parameter evolution on the same axes
+# Overlay sequential and simultaneous parameter evolution on the same axes
 param_evolution_plot({
-    "sequential":    seq_results,
-    "simultaneous":  sim_results,
+    "sequential":   seq_results,
+    "simultaneous": sim_results,
 })
 ```
 
@@ -370,13 +368,36 @@ frf_lasso/
   visualization.py      nyquist_plot(), residual_plot(), slider_plot(),
                         multistart_plot(), print_multistart_summary(),
                         param_evolution_plot()
-
-scripts/
-  fit_single_spectrum.py     Example: single fit, sweep over order and reg_factor
-  fit_multistart.py          Example: multi-start with consistency analysis
-  fit_sequential.py          Example: sequential fit across a time-series
-  fit_simultaneous.py        Example: simultaneous fit (experimental)
 ```
+
+---
+
+## Example scripts and test dataset
+
+The `scripts/` folder contains five self-contained example scripts that demonstrate the full workflow. They are designed to be run in order, with each script building on the understanding gained from the previous one.
+
+### Test dataset
+
+The `data/` folder contains a real non-stationary impedance dataset from a discharging lithium-ion battery:
+
+| File | Shape | Description |
+|---|---|---|
+| `non-stationary_impedance_discharge.npy` | `(53, 318)`, complex | 318 impedance spectra measured during discharge |
+| `frequencies.txt` | `(53,)`, CSV | Frequencies in Hz, from 0.01 to 100 000 Hz |
+| `voltage.npy` | `(318,)` | Terminal voltage at each spectrum |
+| `current.npy` | `(318,)` | Current at each spectrum |
+
+All scripts load their data from this folder. Only `omega` and `impedance` (or `impedance_set`) are passed to the library functions; `voltage` and `current` are available as context for plotting or post-processing.
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `fit_single_spectrum.py` | Fit one spectrum with a fixed `ORDER` and `REG_FACTOR`. The starting point for understanding the API. |
+| `fit_model_selection.py` | Sweep a grid of orders and regularization factors and print a comparison table. Run this to choose `ORDER` and `REG_FACTOR`. |
+| `fit_multistart.py` | Fit one spectrum from many random starting points to check that the chosen settings give a unique solution. |
+| `fit_sequential.py` | Fit all 318 spectra in time order, warm-starting each from the previous result. Shows parameter evolution and an interactive Nyquist slider. |
+| `fit_simultaneous.py` | Joint optimization of all spectra with temporal smoothness penalties. Slower and experimental; compares smoothness against the sequential fit. |
 
 ---
 
