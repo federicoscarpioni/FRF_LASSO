@@ -21,6 +21,10 @@ The model order `n` controls the complexity of the fit and must be chosen by the
 
 **Why LASSO regularization?** Without it, the numerator and denominator polynomials tend to compensate each other, driving coefficients to arbitrarily large values while the ratio remains finite. L1 regularization penalizes the magnitude of all coefficients and keeps the optimization well-conditioned. The strength of the penalty is controlled by `reg_factor` and must also be chosen by the user by comparing statistics.
 
+> **Frequency convention** — all functions in this library expect **angular frequency ω (rad/s)**.
+> Instruments typically report frequency in Hz; convert once before passing data to any library function:
+> `omega = 2 * np.pi * freq_hz`.
+
 ---
 
 ## Features
@@ -69,12 +73,13 @@ from frf_lasso.statistics import compare_fits
 from frf_lasso.visualization import nyquist_plot
 
 # --- Load your data (format is up to you) ---
-frequencies = np.load("frequencies.npy")          # shape: (N,), in Hz
-impedance   = np.load("impedance.npy")             # shape: (N,), complex
+freq_hz   = np.load("frequencies.npy")            # shape: (N,), in Hz
+omega     = 2 * np.pi * freq_hz                   # convert to rad/s — required by frf_lasso
+impedance = np.load("impedance.npy")              # shape: (N,), complex
 
 # --- Fit a single spectrum ---
 result, fit = fit_single(
-    frequencies,
+    omega,
     impedance,
     order=6,
     reg_factor=1e-8,
