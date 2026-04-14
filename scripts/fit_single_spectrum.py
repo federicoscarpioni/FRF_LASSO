@@ -32,7 +32,7 @@ impedance_set = np.load(DATA_DIR / "non-stationary_impedance_discharge.npy")
 # Pick one spectrum to fit (middle of the discharge sequence)
 spectrum_index = impedance_set.shape[1] // 2
 impedance      = impedance_set[:, spectrum_index]
-weights        = 1 / np.abs(impedance) ** 0.5   # square root modulus weighting
+weights        = 1 / np.abs(impedance)    # modulus weighting
 
 print(f"Fitting spectrum {spectrum_index} "
       f"({freq_hz[0]:.3g} – {freq_hz[-1]:.3g} Hz, {len(freq_hz)} points)")
@@ -40,8 +40,8 @@ print(f"Fitting spectrum {spectrum_index} "
 # ---------------------------------------------------------------------------
 # Build the model and set initial parameter values
 # ---------------------------------------------------------------------------
-ORDER      = 6
-REG_FACTOR = 1e-8
+ORDER      = 5
+REG_FACTOR = 1e-12
 
 model  = make_lmfit_model(num_order=ORDER)
 params = model.make_params()
