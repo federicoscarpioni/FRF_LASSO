@@ -97,6 +97,32 @@ nyquist_plot(frequencies, impedance, fit=fit)
 
 ---
 
+## Supplying weighting factors
+
+All fitting functions require the caller to supply a weighting array explicitly. The choice of weighting strategy is problem-dependent and left entirely to the user.
+
+| Function | Expected shape |
+|---|---|
+| `fit_single` | `(N,)` — one weight per frequency |
+| `fit_multistart` | `(N,)` — one weight per frequency |
+| `fit_sequential` | `(N,)` same weights for all spectra, or `(N, T)` one column per spectrum |
+| `fit_simultaneous` | `(N,)` same weights for all spectra |
+
+Common choices include:
+
+```python
+# Unit weights — all frequencies equally weighted
+weights = np.ones(len(omega))
+
+# Modulus weights — reduces influence of high-impedance points
+weights = 1 / np.abs(impedance) ** 0.5
+
+# For sequential fitting with per-spectrum modulus weights
+weights = 1 / np.abs(impedance_set) ** 0.5   # shape (N, T)
+```
+
+---
+
 ## Choosing model order and regularization factor
 
 Neither `order` nor `reg_factor` has a universally correct value. The typical workflow is to sweep over both and compare the fit statistics:
