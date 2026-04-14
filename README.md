@@ -278,7 +278,25 @@ result.fit_report()    # formatted summary string
 
 ## Notes on the simultaneous fit
 
-`simultaneous_fit()` jointly optimizes all spectra in a time-series in a single optimization run, adding temporal smoothness penalties (1st and 2nd derivative of parameter evolution) to the objective. In practice this approach is significantly slower and did not yield better results than the sequential fit on the test datasets. It is included for completeness and experimentation. The output is a single `MinimizerResult` with one parameter set per spectrum.
+`fit_simultaneous()` jointly optimizes all spectra in a time-series in a single optimization run, adding temporal smoothness penalties (1st and 2nd derivative of parameter evolution) to the objective. In practice this approach is significantly slower and did not yield better results than the sequential fit on the test datasets. It is included for completeness and experimentation.
+
+### Output structure
+
+Unlike the other fitting functions which return `(results, fits)`, `fit_simultaneous` returns a 3-tuple:
+
+```python
+global_result, results, fits = fit_simultaneous(...)
+```
+
+| Return value | Type | Description |
+|---|---|---|
+| `global_result` | `lmfit.MinimizerResult` | The raw output of the single joint optimisation. Parameters are named `{param}_t{t}` (e.g. `a0_t0`, `a0_t1`, ...). This is the only result that carries statistically meaningful fit statistics. |
+| `results` | `list` of `lmfit.MinimizerResult` | Per-spectrum results with local parameter names (e.g. `a0`, `a1`, ...), structurally identical to the output of `fit_sequential`. |
+| `fits` | `list` of `ndarray` | Per-spectrum model predictions, same as all other fitting functions. |
+
+### Statistics caveat
+
+The `chisqr`, `aic`, `bic` and related attributes in each element of `results` are **inherited from `global_result`** — they describe the quality of the full joint optimisation, not of any individual spectrum. Do not compare these values directly against per-spectrum statistics from `fit_single` or `fit_sequential`. Use `global_result` for any statistical assessment of the simultaneous fit.
 
 ---
 
