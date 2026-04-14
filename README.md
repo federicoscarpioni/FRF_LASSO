@@ -86,7 +86,7 @@ weights = 1 / np.abs(impedance) ** 0.5            # modulus weighting
 
 # --- Fit ---
 result, fit = fit_single(omega, impedance, model, params, weights, reg_factor=1e-8)
-print(result.fit_report())
+print(lmfit.fit_report(result))
 
 # --- Save ---
 save_single("./results/my_fit", omega, impedance, model, result, fit,
@@ -436,7 +436,7 @@ result.aic             # Akaike information criterion
 result.bic             # Bayesian information criterion
 result.nfev            # number of function evaluations
 result.success         # convergence flag
-result.fit_report()    # formatted summary string
+lmfit.fit_report(result)   # formatted summary string
 ```
 
 ---
