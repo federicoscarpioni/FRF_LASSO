@@ -75,16 +75,19 @@ def residual_plot(
     omega: np.ndarray,
     impedance: np.ndarray,
     fit: np.ndarray,
-    weights: np.ndarray = None,
     ax: plt.Axes = None,
 ) -> tuple:
     """
-    Plot weighted residuals (real and imaginary) vs angular frequency.
+    Plot percentage residuals (real and imaginary) vs angular frequency.
 
-    Residuals are defined as ``weights * (fit - data)``.  When ``weights``
-    is None, unweighted residuals are shown.  Both panels share the same
-    x-axis on a log scale, making it easy to spot frequency ranges where
-    the fit is poor.
+    Residuals are normalised by the impedance modulus at each frequency:
+
+        residual_real [%] = 100 * (fit.real - data.real) / |data|
+        residual_imag [%] = 100 * (fit.imag - data.imag) / |data|
+
+    Normalising by |Z| instead of the individual components avoids
+    division by near-zero values (e.g. when the imaginary part crosses
+    zero) and gives a single consistent scale across both panels.
 
     Parameters
     ----------
@@ -94,8 +97,6 @@ def residual_plot(
         Measured impedance.
     fit : ndarray, shape (N,), complex
         Fitted impedance.
-    weights : ndarray, shape (N,), real or None
-        Weighting factors.  Unweighted residuals are shown when None.
     ax : matplotlib.axes.Axes or None
         If provided, must be a length-2 array of Axes (real, imag).
         A new figure with two vertically stacked panels is created when None.
@@ -104,10 +105,9 @@ def residual_plot(
     -------
     fig, axes : Figure, ndarray of Axes (shape (2,))
     """
-    w = weights if weights is not None else np.ones(len(omega))
-
-    res_real = w * (fit.real - impedance.real)
-    res_imag = w * (fit.imag - impedance.imag)
+    modulus = np.abs(impedance)
+    res_real = 100 * (fit.real - impedance.real) / modulus
+    res_imag = 100 * (fit.imag - impedance.imag) / modulus
 
     if ax is None:
         fig, axes = plt.subplots(2, 1, sharex=True, figsize=(7, 5))
@@ -116,12 +116,12 @@ def residual_plot(
 
     axes[0].semilogx(omega, res_real, "o-", markersize=3)
     axes[0].axhline(0, color="k", linewidth=0.8, linestyle="--")
-    axes[0].set_ylabel("Weighted residual\n(real)")
+    axes[0].set_ylabel("Residual / %\n(real)")
     axes[0].grid(True, alpha=0.3)
 
     axes[1].semilogx(omega, res_imag, "o-", markersize=3, color="tab:orange")
     axes[1].axhline(0, color="k", linewidth=0.8, linestyle="--")
-    axes[1].set_ylabel("Weighted residual\n(imag)")
+    axes[1].set_ylabel("Residual / %\n(imag)")
     axes[1].set_xlabel("ω / rad s⁻¹")
     axes[1].grid(True, alpha=0.3)
 
