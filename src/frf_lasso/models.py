@@ -126,20 +126,26 @@ def make_lmfit_model(num_order, den_order=None):
 
     a_names = [f"a{i}" for i in range(num_order + 1)]      # a0 … a_num_order
     b_names = [f"b{i}" for i in range(1, den_order + 1)]   # b1 … b_den_order
-    param_names = a_names + b_names
-
-    def _model_func(freq, **kwargs):
-        a = np.array([kwargs[n] for n in a_names])
-        b = np.array([kwargs[n] for n in b_names])
-        return rational_poly(freq, a, b)
 
     if num_order == den_order:
-        _model_func.__name__ = f"rational_poly{num_order}"
+        func_name = f"rational_poly{num_order}"
     else:
-        _model_func.__name__ = f"rational_poly_n{num_order}_m{den_order}"
+        func_name = f"rational_poly_n{num_order}_m{den_order}"
 
-    return lmfit.Model(
-        _model_func,
-        independent_vars=["freq"],
-        param_names=param_names,
+    # lmfit introspects the function signature to discover parameter names.
+    # A **kwargs signature does not satisfy this check in lmfit >= 1.3, so we
+    # generate a function with explicit named arguments at runtime using exec.
+    sig = ", ".join(a_names + b_names)
+    a_list = ", ".join(a_names)
+    b_list = ", ".join(b_names)
+    src = (
+        f"def {func_name}(freq, {sig}):\n"
+        f"    a = np.array([{a_list}])\n"
+        f"    b = np.array([{b_list}])\n"
+        f"    return rational_poly(freq, a, b)\n"
     )
+    _ns = {"np": np, "rational_poly": rational_poly}
+    exec(src, _ns)  # noqa: S102
+    _model_func = _ns[func_name]
+
+    return lmfit.Model(_model_func, independent_vars=["freq"])
