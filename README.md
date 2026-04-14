@@ -45,9 +45,15 @@ The model order must be chosen by the user, typically by sweeping over several v
 The library is not yet on PyPI. Clone the repository and install in editable mode:
 
 ```bash
-git clone https://github.com/<your-username>/frf_lasso.git
+git clone https://github.com/federicoscarpioni/FRF_LASSO.git
 cd frf_lasso
 pip install -e .
+```
+
+or just remote install it with:
+
+```
+pip instal git+https://github.com/federicoscarpioni/FRF_LASSO.git
 ```
 
 ### Dependencies
