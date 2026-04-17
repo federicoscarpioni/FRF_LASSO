@@ -75,7 +75,7 @@ def _create_global_params(
 
 
 def _extract_individual_results(
-    global_result: lmfit.MinimizerResult,
+    global_result: lmfit.minimizer.MinimizerResult,
     model: lmfit.Model,
     omega: np.ndarray,
     n_spectra: int,
