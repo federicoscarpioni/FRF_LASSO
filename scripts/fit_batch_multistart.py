@@ -59,7 +59,7 @@ weights = 1 / np.abs(impedance_set) ** 0.5
 print(f"Running batch multi-start fit — order={ORDER}, reg={REG_FACTOR:.0e}, "
       f"n_starts={N_STARTS} × {n_spectra} spectra ...")
 
-model = make_lmfit_model(num_order=ORDER)
+model = make_lmfit_model(num_order=ORDER, variable="sqrt_jw")
 
 results, fits, consistency = fit_batch_multistart(
     omega, impedance_set, model, weights,

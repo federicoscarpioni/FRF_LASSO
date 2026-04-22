@@ -50,7 +50,7 @@ print(f"Multi-start fit — spectrum {spectrum_index}, "
 # ---------------------------------------------------------------------------
 # Multi-start fit
 # ---------------------------------------------------------------------------
-model = make_lmfit_model(num_order=ORDER)
+model = make_lmfit_model(num_order=ORDER, variable="sqrt_jw")
 
 results, fits = fit_multistart(
     omega, impedance, model, weights,

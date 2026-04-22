@@ -47,7 +47,7 @@ candidates = []
 print("Fitting grid...")
 for order in ORDERS:
     for reg_factor in REG_FACTORS:
-        model  = make_lmfit_model(num_order=order)
+        model  = make_lmfit_model(num_order=order, variable="sqrt_jw")
         params = model.make_params()
         for name in model.param_names:
             params[name].set(value=1.0, min=1e-9, max=1e6)

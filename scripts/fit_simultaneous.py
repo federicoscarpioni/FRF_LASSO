@@ -48,7 +48,7 @@ print(f"Dataset: {n_spectra} spectra, {n_freq} frequencies")
 # ---------------------------------------------------------------------------
 print(f"\nRunning sequential fit for initialisation (order={ORDER}, reg={REG_FACTOR:.0e})...")
 
-model  = make_lmfit_model(num_order=ORDER)
+model  = make_lmfit_model(num_order=ORDER, variable="sqrt_jw")
 params = model.make_params()
 for name in model.param_names:
     params[name].set(value=1.0, min=1e-9, max=1e6)
