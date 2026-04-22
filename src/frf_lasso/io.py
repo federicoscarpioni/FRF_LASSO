@@ -112,11 +112,12 @@ def _dict_to_result(d: dict) -> lmfit.MinimizerResult:
 # Internal helpers — folder I/O
 # ---------------------------------------------------------------------------
 
-def _extract_orders(model: lmfit.Model) -> tuple:
-    """Return (num_order, den_order) inferred from the model's parameter names."""
+def _extract_model_meta(model: lmfit.Model) -> tuple:
+    """Return (num_order, den_order, poly_variable) from model attributes."""
     a_params = [n for n in model.param_names if n.startswith("a")]
     b_params = [n for n in model.param_names if n.startswith("b")]
-    return len(a_params) - 1, len(b_params)
+    variable = getattr(model, "_poly_variable", "sqrt_jw")
+    return len(a_params) - 1, len(b_params), variable
 
 
 def _save_result(path: str, result: lmfit.MinimizerResult, filename: str = "result.json"):
@@ -200,17 +201,18 @@ def save_single(
         L1 regularization strength used during fitting.
     """
     os.makedirs(path, exist_ok=True)
-    num_order, den_order = _extract_orders(model)
+    num_order, den_order, poly_variable = _extract_model_meta(model)
 
     _save_metadata(path, {
-        "fit_type":   "single",
-        "num_order":  num_order,
-        "den_order":  den_order,
-        "reg_factor": reg_factor,
-        "n_freq":     len(omega),
-        "chisqr":     result.chisqr,
-        "aic":        result.aic,
-        "bic":        result.bic,
+        "fit_type":     "single",
+        "num_order":    num_order,
+        "den_order":    den_order,
+        "poly_variable": poly_variable,
+        "reg_factor":   reg_factor,
+        "n_freq":       len(omega),
+        "chisqr":       result.chisqr,
+        "aic":          result.aic,
+        "bic":          result.bic,
     })
     np.save(os.path.join(path, "omega.npy"),     omega)
     np.save(os.path.join(path, "impedance.npy"), impedance)
@@ -252,17 +254,18 @@ def save_multistart(
         L1 regularization strength used during fitting.
     """
     os.makedirs(path, exist_ok=True)
-    num_order, den_order = _extract_orders(model)
+    num_order, den_order, poly_variable = _extract_model_meta(model)
     best_chisqr = min(r.chisqr for r in results)
 
     _save_metadata(path, {
-        "fit_type":    "multistart",
-        "num_order":   num_order,
-        "den_order":   den_order,
-        "reg_factor":  reg_factor,
-        "n_freq":      len(omega),
-        "n_starts":    len(results),
-        "best_chisqr": best_chisqr,
+        "fit_type":      "multistart",
+        "num_order":     num_order,
+        "den_order":     den_order,
+        "poly_variable": poly_variable,
+        "reg_factor":    reg_factor,
+        "n_freq":        len(omega),
+        "n_starts":      len(results),
+        "best_chisqr":   best_chisqr,
     })
     np.save(os.path.join(path, "omega.npy"),     omega)
     np.save(os.path.join(path, "impedance.npy"), impedance)
@@ -303,16 +306,17 @@ def save_sequential(
         L1 regularization strength used during fitting.
     """
     os.makedirs(path, exist_ok=True)
-    num_order, den_order = _extract_orders(model)
+    num_order, den_order, poly_variable = _extract_model_meta(model)
     n_freq, n_spectra = impedance_set.shape
 
     _save_metadata(path, {
-        "fit_type":  "sequential",
-        "num_order": num_order,
-        "den_order": den_order,
-        "reg_factor": reg_factor,
-        "n_freq":    n_freq,
-        "n_spectra": n_spectra,
+        "fit_type":      "sequential",
+        "num_order":     num_order,
+        "den_order":     den_order,
+        "poly_variable": poly_variable,
+        "reg_factor":    reg_factor,
+        "n_freq":        n_freq,
+        "n_spectra":     n_spectra,
     })
     np.save(os.path.join(path, "omega.npy"),         omega)
     np.save(os.path.join(path, "impedance_set.npy"), impedance_set)
@@ -367,21 +371,22 @@ def save_simultaneous(
         Temporal smoothness penalty strength used during fitting.
     """
     os.makedirs(path, exist_ok=True)
-    num_order, den_order = _extract_orders(model)
+    num_order, den_order, poly_variable = _extract_model_meta(model)
     n_freq, n_spectra = impedance_set.shape
 
     _save_metadata(path, {
-        "fit_type":    "simultaneous",
-        "num_order":   num_order,
-        "den_order":   den_order,
-        "reg_factor":  reg_factor,
-        "smt_factor":  smt_factor,
-        "n_freq":      n_freq,
-        "n_spectra":   n_spectra,
-        "stats_source": "global",
-        "chisqr":      global_result.chisqr,
-        "aic":         global_result.aic,
-        "bic":         global_result.bic,
+        "fit_type":      "simultaneous",
+        "num_order":     num_order,
+        "den_order":     den_order,
+        "poly_variable": poly_variable,
+        "reg_factor":    reg_factor,
+        "smt_factor":    smt_factor,
+        "n_freq":        n_freq,
+        "n_spectra":     n_spectra,
+        "stats_source":  "global",
+        "chisqr":        global_result.chisqr,
+        "aic":           global_result.aic,
+        "bic":           global_result.bic,
     })
     np.save(os.path.join(path, "omega.npy"),         omega)
     np.save(os.path.join(path, "impedance_set.npy"), impedance_set)
@@ -434,17 +439,18 @@ def save_batch_multistart(
         Number of random starts used per spectrum.
     """
     os.makedirs(path, exist_ok=True)
-    num_order, den_order = _extract_orders(model)
+    num_order, den_order, poly_variable = _extract_model_meta(model)
     n_freq, n_spectra = impedance_set.shape
 
     _save_metadata(path, {
-        "fit_type":  "batch_multistart",
-        "num_order": num_order,
-        "den_order": den_order,
-        "reg_factor": reg_factor,
-        "n_starts":  n_starts,
-        "n_freq":    n_freq,
-        "n_spectra": n_spectra,
+        "fit_type":      "batch_multistart",
+        "num_order":     num_order,
+        "den_order":     den_order,
+        "poly_variable": poly_variable,
+        "reg_factor":    reg_factor,
+        "n_starts":      n_starts,
+        "n_freq":        n_freq,
+        "n_spectra":     n_spectra,
     })
     np.save(os.path.join(path, "omega.npy"),         omega)
     np.save(os.path.join(path, "impedance_set.npy"), impedance_set)
@@ -474,7 +480,8 @@ def load_single(path: str) -> tuple:
     metadata : dict
     """
     meta      = _load_metadata(path)
-    model     = make_lmfit_model(meta["num_order"], meta["den_order"])
+    model     = make_lmfit_model(meta["num_order"], meta["den_order"],
+                                 variable=meta.get("poly_variable", "sqrt_jw"))
     omega     = np.load(os.path.join(path, "omega.npy"))
     impedance = np.load(os.path.join(path, "impedance.npy"))
     weights   = np.load(os.path.join(path, "weights.npy"))
@@ -498,7 +505,8 @@ def load_multistart(path: str) -> tuple:
     metadata : dict
     """
     meta      = _load_metadata(path)
-    model     = make_lmfit_model(meta["num_order"], meta["den_order"])
+    model     = make_lmfit_model(meta["num_order"], meta["den_order"],
+                                 variable=meta.get("poly_variable", "sqrt_jw"))
     omega     = np.load(os.path.join(path, "omega.npy"))
     impedance = np.load(os.path.join(path, "impedance.npy"))
     weights   = np.load(os.path.join(path, "weights.npy"))
@@ -521,7 +529,8 @@ def load_sequential(path: str) -> tuple:
     metadata : dict
     """
     meta          = _load_metadata(path)
-    model         = make_lmfit_model(meta["num_order"], meta["den_order"])
+    model         = make_lmfit_model(meta["num_order"], meta["den_order"],
+                                     variable=meta.get("poly_variable", "sqrt_jw"))
     omega         = np.load(os.path.join(path, "omega.npy"))
     impedance_set = np.load(os.path.join(path, "impedance_set.npy"))
     weights       = np.load(os.path.join(path, "weights.npy"))
@@ -550,7 +559,8 @@ def load_simultaneous(path: str) -> tuple:
     metadata : dict
     """
     meta          = _load_metadata(path)
-    model         = make_lmfit_model(meta["num_order"], meta["den_order"])
+    model         = make_lmfit_model(meta["num_order"], meta["den_order"],
+                                     variable=meta.get("poly_variable", "sqrt_jw"))
     omega         = np.load(os.path.join(path, "omega.npy"))
     impedance_set = np.load(os.path.join(path, "impedance_set.npy"))
     weights       = np.load(os.path.join(path, "weights.npy"))
@@ -577,7 +587,8 @@ def load_batch_multistart(path: str) -> tuple:
     metadata : dict
     """
     meta          = _load_metadata(path)
-    model         = make_lmfit_model(meta["num_order"], meta["den_order"])
+    model         = make_lmfit_model(meta["num_order"], meta["den_order"],
+                                     variable=meta.get("poly_variable", "sqrt_jw"))
     omega         = np.load(os.path.join(path, "omega.npy"))
     impedance_set = np.load(os.path.join(path, "impedance_set.npy"))
     weights       = np.load(os.path.join(path, "weights.npy"))
