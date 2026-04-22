@@ -303,3 +303,92 @@ def fit_sequential(
         current_params = result.params.copy()
 
     return results, fits
+
+
+def fit_batch(
+    omega: np.ndarray,
+    impedance_set: np.ndarray,
+    model: lmfit.Model,
+    params: lmfit.Parameters,
+    weights: np.ndarray,
+    reg_factor: float = 1e-8,
+    method: str = "least_squares",
+    **fit_kws,
+) -> tuple:
+    """
+    Fit a collection of impedance spectra independently from the same start.
+
+    Every spectrum is fitted from the same ``params``, with no information
+    passed between spectra.  This avoids the error-propagation problem of
+    ``fit_sequential``, where a single badly-fitted spectrum (e.g. one whose
+    parameters hit a boundary) corrupts the warm start for all subsequent
+    spectra.
+
+    The output structure is identical to ``fit_sequential``, so the same
+    ``save_sequential`` / ``load_sequential`` functions can be used to
+    store and reload results.
+
+    Parameters
+    ----------
+    omega : ndarray, shape (N,)
+        Angular frequencies in rad/s.
+    impedance_set : ndarray, shape (N, T), complex
+        Impedance spectra at T time points.  Each column is one spectrum.
+    model : lmfit.Model
+        Model returned by ``make_lmfit_model``.
+    params : lmfit.Parameters
+        Initial parameter values in linear space.  Used as the starting
+        point for every spectrum independently.
+    weights : ndarray, shape (N,) or (N, T), real
+        Per-frequency weighting factors.  Two forms are accepted:
+
+        - 1D array, shape (N,) — the same weights are applied to every
+          spectrum.
+        - 2D array, shape (N, T) — column t is used for spectrum t.
+
+        See module docstring for weighting strategy guidance.
+    reg_factor : float
+        L1 regularization strength applied to every spectrum.
+    method : str
+        Optimisation method forwarded to ``fit_single`` for every spectrum.
+        See ``fit_single`` docstring for details.
+    **fit_kws
+        Additional keyword arguments forwarded to ``fit_single`` and
+        then to ``lmfit.minimize``.
+
+    Returns
+    -------
+    results : list of lmfit.MinimizerResult, length T
+        One result per spectrum.
+    fits : list of ndarray, each shape (N,), complex
+        Corresponding model predictions.
+    """
+    n_freq, n_spectra = impedance_set.shape
+    weights = np.asarray(weights, dtype=float)
+
+    if weights.ndim == 1:
+        if weights.shape[0] != n_freq:
+            raise ValueError(
+                f"1D weights length {weights.shape[0]} does not match "
+                f"number of frequencies {n_freq}"
+            )
+    elif weights.ndim == 2:
+        if weights.shape != (n_freq, n_spectra):
+            raise ValueError(
+                f"2D weights shape {weights.shape} does not match "
+                f"impedance_set shape {impedance_set.shape}"
+            )
+    else:
+        raise ValueError("weights must be a 1D or 2D array")
+
+    results, fits = [], []
+
+    for t in range(n_spectra):
+        impedance = impedance_set[:, t]
+        w = weights if weights.ndim == 1 else weights[:, t]
+        result, fit = fit_single(omega, impedance, model, params, w,
+                                 reg_factor, method=method, **fit_kws)
+        results.append(result)
+        fits.append(fit)
+
+    return results, fits

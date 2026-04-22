@@ -210,7 +210,21 @@ print_multistart_summary(stats)
 multistart_plot(stats)
 ```
 
-### 3. Sequential fit
+### 3. Batch fit
+
+Fits every spectrum independently from the same starting parameters, with no information passed between spectra. Use this instead of the sequential fit when the dataset contains spectra that are difficult to fit and would corrupt the warm start for all subsequent spectra. The output structure is identical to `fit_sequential`, so `save_sequential` / `load_sequential` work without modification.
+
+```python
+from frf_lasso import fit_batch
+
+results, fits = fit_batch(
+    omega, impedance_set, model, params,
+    weights,                        # (N,) or (N, T)
+    reg_factor=1e-8,
+)
+```
+
+### 4. Sequential fit
 
 Fits a time-ordered collection of spectra one by one, using the previous result as the warm start for the next. Suitable for datasets where impedance evolves slowly over time (e.g. battery cycling).
 
