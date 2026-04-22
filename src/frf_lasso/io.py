@@ -390,6 +390,71 @@ def save_simultaneous(
     _save_results_list(path, results, fits)
 
 
+def save_batch_multistart(
+    path: str,
+    omega: np.ndarray,
+    impedance_set: np.ndarray,
+    model: lmfit.Model,
+    results: list,
+    fits: list,
+    consistency: list,
+    weights: np.ndarray,
+    reg_factor: float,
+    n_starts: int,
+):
+    """
+    Save a batch multi-start fit session.
+
+    Saves the best result per spectrum (same folder layout as sequential)
+    plus a ``consistency.json`` file containing the per-spectrum chi-square
+    distribution and reliability metrics.
+
+    Parameters
+    ----------
+    path : str
+        Destination folder (created if it does not exist).
+    omega : ndarray, shape (N,)
+        Angular frequencies in rad/s.
+    impedance_set : ndarray, shape (N, T), complex
+        Original measured impedance at each time point.
+    model : lmfit.Model
+        Model used for fitting.
+    results : list of lmfit.MinimizerResult, length T
+        Best result per spectrum (first output of ``fit_batch_multistart``).
+    fits : list of ndarray, each shape (N,), complex
+        Best fit per spectrum (second output of ``fit_batch_multistart``).
+    consistency : list of dict, length T
+        Per-spectrum consistency metrics (third output of
+        ``fit_batch_multistart``).
+    weights : ndarray, shape (N,) or (N, T), real
+        Weighting factors used during fitting.
+    reg_factor : float
+        L1 regularization strength.
+    n_starts : int
+        Number of random starts used per spectrum.
+    """
+    os.makedirs(path, exist_ok=True)
+    num_order, den_order = _extract_orders(model)
+    n_freq, n_spectra = impedance_set.shape
+
+    _save_metadata(path, {
+        "fit_type":  "batch_multistart",
+        "num_order": num_order,
+        "den_order": den_order,
+        "reg_factor": reg_factor,
+        "n_starts":  n_starts,
+        "n_freq":    n_freq,
+        "n_spectra": n_spectra,
+    })
+    np.save(os.path.join(path, "omega.npy"),         omega)
+    np.save(os.path.join(path, "impedance_set.npy"), impedance_set)
+    np.save(os.path.join(path, "weights.npy"),       weights)
+    _save_results_list(path, results, fits)
+
+    with open(os.path.join(path, "consistency.json"), "w") as f:
+        json.dump(consistency, f, indent=2)
+
+
 # ---------------------------------------------------------------------------
 # Public API — load
 # ---------------------------------------------------------------------------
@@ -492,3 +557,31 @@ def load_simultaneous(path: str) -> tuple:
     global_result = _load_result(path, "global_result.json")
     results, fits = _load_results_list(path)
     return omega, impedance_set, model, global_result, results, fits, weights, meta
+
+
+def load_batch_multistart(path: str) -> tuple:
+    """
+    Load a batch multi-start fit session.
+
+    Returns
+    -------
+    omega : ndarray, shape (N,)
+    impedance_set : ndarray, shape (N, T), complex
+    model : lmfit.Model
+    results : list of lmfit.MinimizerResult, length T
+        Best result per spectrum.
+    fits : list of ndarray, each shape (N,), complex
+    consistency : list of dict, length T
+        Per-spectrum consistency metrics.
+    weights : ndarray, shape (N,) or (N, T)
+    metadata : dict
+    """
+    meta          = _load_metadata(path)
+    model         = make_lmfit_model(meta["num_order"], meta["den_order"])
+    omega         = np.load(os.path.join(path, "omega.npy"))
+    impedance_set = np.load(os.path.join(path, "impedance_set.npy"))
+    weights       = np.load(os.path.join(path, "weights.npy"))
+    results, fits = _load_results_list(path)
+    with open(os.path.join(path, "consistency.json")) as f:
+        consistency = json.load(f)
+    return omega, impedance_set, model, results, fits, consistency, weights, meta

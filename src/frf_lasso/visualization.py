@@ -244,6 +244,66 @@ def multistart_plot(stats: dict) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Batch multi-start
+# ---------------------------------------------------------------------------
+
+def batch_multistart_cv_plot(consistency: list) -> tuple:
+    """
+    Plot per-spectrum CV and consistency ratio from a batch multi-start fit.
+
+    Two panels share the spectrum-index x-axis:
+      - Top: coefficient of variation (CV) of chi-square across starts.
+        Horizontal thresholds mark the excellent / good / fair / poor zones.
+      - Bottom: consistency ratio (fraction of starts within 2x the best chi2).
+
+    Spectra with high CV or low consistency ratio are immediately visible
+    as outliers and warrant further inspection.
+
+    Parameters
+    ----------
+    consistency : list of dict, length T
+        Third output of ``fit_batch_multistart``.
+
+    Returns
+    -------
+    fig, axes : Figure, ndarray of Axes (shape (2,))
+    """
+    cv = np.array([c["cv"]                for c in consistency])
+    cr = np.array([c["consistency_ratio"] for c in consistency])
+    idx = np.arange(len(consistency))
+
+    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(10, 5))
+
+    # CV panel
+    axes[0].plot(idx, cv, "o-", markersize=3, color="tab:blue")
+    for threshold, color, label in [
+        (0.05, "tab:green",  "excellent (0.05)"),
+        (0.10, "tab:orange", "good (0.10)"),
+        (0.20, "tab:red",    "poor (0.20)"),
+    ]:
+        axes[0].axhline(threshold, color=color, linestyle="--",
+                        linewidth=0.8, alpha=0.7, label=label)
+    axes[0].set_ylabel("CV (chi²)")
+    axes[0].legend(fontsize=7, loc="upper right")
+    axes[0].grid(True, alpha=0.3)
+
+    # Consistency ratio panel
+    axes[1].plot(idx, cr, "o-", markersize=3, color="tab:orange")
+    axes[1].axhline(0.80, color="tab:green",  linestyle="--",
+                    linewidth=0.8, alpha=0.7, label="high (0.80)")
+    axes[1].axhline(0.60, color="tab:red",    linestyle="--",
+                    linewidth=0.8, alpha=0.7, label="low (0.60)")
+    axes[1].set_ylabel("Consistency ratio")
+    axes[1].set_xlabel("Spectrum index")
+    axes[1].set_ylim(0, 1.05)
+    axes[1].legend(fontsize=7, loc="lower right")
+    axes[1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    return fig, axes
+
+
+# ---------------------------------------------------------------------------
 # Time-series
 # ---------------------------------------------------------------------------
 

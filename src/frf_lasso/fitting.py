@@ -392,3 +392,132 @@ def fit_batch(
         fits.append(fit)
 
     return results, fits
+
+
+def fit_batch_multistart(
+    omega: np.ndarray,
+    impedance_set: np.ndarray,
+    model: lmfit.Model,
+    weights: np.ndarray,
+    n_starts: int = 20,
+    reg_factor: float = 1e-8,
+    param_min: float = 1e-9,
+    param_max: float = 1e6,
+    seed: int = 42,
+    method: str = "least_squares",
+    **fit_kws,
+) -> tuple:
+    """
+    Fit every spectrum independently from multiple random starting points.
+
+    For each spectrum, ``fit_multistart`` is run with ``n_starts`` random
+    initialisations.  Only the best result (lowest chi-square) is kept per
+    spectrum.  Per-spectrum consistency metrics (CV, consistency ratio) are
+    also returned so that spectra with unreliable fits can be identified.
+
+    The output ``results`` and ``fits`` lists have the same structure as
+    ``fit_sequential`` and ``fit_batch``, so ``save_sequential`` /
+    ``load_sequential`` can be used to persist the fitted parameters.
+    Use ``save_batch_multistart`` / ``load_batch_multistart`` when you also
+    want to persist the consistency metrics.
+
+    Parameters
+    ----------
+    omega : ndarray, shape (N,)
+        Angular frequencies in rad/s.
+    impedance_set : ndarray, shape (N, T), complex
+        Impedance spectra at T time points.  Each column is one spectrum.
+    model : lmfit.Model
+        Model returned by ``make_lmfit_model``.
+    weights : ndarray, shape (N,) or (N, T), real
+        Per-frequency weighting factors.  Two forms are accepted:
+
+        - 1D array, shape (N,) — the same weights are applied to every
+          spectrum.
+        - 2D array, shape (N, T) — column t is used for spectrum t.
+    n_starts : int
+        Number of random starting points per spectrum.
+    reg_factor : float
+        L1 regularization strength.
+    param_min : float
+        Lower bound for random parameter initialisation (linear space).
+    param_max : float
+        Upper bound for random parameter initialisation (linear space).
+    seed : int
+        Master random seed.  A unique seed is derived per spectrum so
+        results are fully reproducible.
+    method : str
+        Optimisation method forwarded to ``fit_single``.
+    **fit_kws
+        Additional keyword arguments forwarded to ``lmfit.minimize``.
+
+    Returns
+    -------
+    results : list of lmfit.MinimizerResult, length T
+        Best result (lowest chi-square) per spectrum.
+    fits : list of ndarray, each shape (N,), complex
+        Model predictions for the best result per spectrum.
+    consistency : list of dict, length T
+        Per-spectrum consistency metrics.  Each dict contains:
+        ``n_starts``, ``chi2_values``, ``mean``, ``std``, ``median``,
+        ``min``, ``max``, ``iqr``, ``cv``, ``consistency_ratio``,
+        ``best_index``.
+    """
+    n_freq, n_spectra = impedance_set.shape
+    weights = np.asarray(weights, dtype=float)
+
+    if weights.ndim == 1:
+        if weights.shape[0] != n_freq:
+            raise ValueError(
+                f"1D weights length {weights.shape[0]} does not match "
+                f"number of frequencies {n_freq}"
+            )
+    elif weights.ndim == 2:
+        if weights.shape != (n_freq, n_spectra):
+            raise ValueError(
+                f"2D weights shape {weights.shape} does not match "
+                f"impedance_set shape {impedance_set.shape}"
+            )
+    else:
+        raise ValueError("weights must be a 1D or 2D array")
+
+    rng = np.random.default_rng(seed)
+    results, fits, consistency = [], [], []
+
+    for t in range(n_spectra):
+        impedance = impedance_set[:, t]
+        w = weights if weights.ndim == 1 else weights[:, t]
+
+        spec_seed = int(rng.integers(0, 2**31))
+        spec_results, spec_fits = fit_multistart(
+            omega, impedance, model, w,
+            n_starts=n_starts,
+            reg_factor=reg_factor,
+            param_min=param_min,
+            param_max=param_max,
+            seed=spec_seed,
+            method=method,
+            **fit_kws,
+        )
+
+        chi2 = np.array([r.chisqr for r in spec_results])
+        min_chi2 = float(chi2.min())
+        best_idx = int(np.argmin(chi2))
+
+        results.append(spec_results[best_idx])
+        fits.append(spec_fits[best_idx])
+        consistency.append({
+            "n_starts":          n_starts,
+            "chi2_values":       chi2.tolist(),
+            "mean":              float(chi2.mean()),
+            "std":               float(chi2.std()),
+            "median":            float(np.median(chi2)),
+            "min":               min_chi2,
+            "max":               float(chi2.max()),
+            "iqr":               float(np.percentile(chi2, 75) - np.percentile(chi2, 25)),
+            "cv":                float(chi2.std() / chi2.mean()) if chi2.mean() != 0 else np.inf,
+            "consistency_ratio": float(np.mean(chi2 <= 2 * min_chi2)),
+            "best_index":        best_idx,
+        })
+
+    return results, fits, consistency

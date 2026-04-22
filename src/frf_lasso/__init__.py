@@ -17,7 +17,7 @@ I/O, statistics, and visualization are in dedicated submodules:
 """
 
 from .models import make_lmfit_model, rational_poly
-from .fitting import fit_single, fit_multistart, fit_sequential, fit_batch
+from .fitting import fit_single, fit_multistart, fit_sequential, fit_batch, fit_batch_multistart
 from .simultaneous import fit_simultaneous, adapt_params
 
 __version__ = "0.1.0"
@@ -31,6 +31,7 @@ __all__ = [
     "fit_multistart",
     "fit_sequential",
     "fit_batch",
+    "fit_batch_multistart",
     # simultaneous
     "fit_simultaneous",
     "adapt_params",

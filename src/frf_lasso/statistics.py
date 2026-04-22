@@ -226,6 +226,104 @@ def multistart_statistics(results: list) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Batch multi-start consistency
+# ---------------------------------------------------------------------------
+
+def batch_multistart_statistics(consistency: list) -> dict:
+    """
+    Aggregate per-spectrum consistency metrics from a batch multi-start fit.
+
+    Parameters
+    ----------
+    consistency : list of dict, length T
+        Third output of ``fit_batch_multistart``.
+
+    Returns
+    -------
+    stats : dict
+        Keys:
+        ``n_spectra``         — number of spectra
+        ``n_starts``          — number of starts per spectrum
+        ``cv``                — dict with ``values`` (array), ``mean``, ``std``, ``max``,
+                                and ``fraction_poor`` (fraction of spectra with CV >= 0.2)
+        ``consistency_ratio`` — dict with ``values`` (array), ``mean``, ``min``
+        ``chi2_min``          — dict with ``values`` (array), ``mean``, ``std``
+        ``worst_spectra``     — indices of the 10 spectra with the highest CV
+    """
+    cv     = np.array([c["cv"]                for c in consistency])
+    cr     = np.array([c["consistency_ratio"] for c in consistency])
+    chi2   = np.array([c["min"]               for c in consistency])
+
+    return {
+        "n_spectra": len(consistency),
+        "n_starts":  consistency[0]["n_starts"],
+        "cv": {
+            "values":       cv,
+            "mean":         float(cv.mean()),
+            "std":          float(cv.std()),
+            "max":          float(cv.max()),
+            "fraction_poor": float(np.mean(cv >= 0.2)),
+        },
+        "consistency_ratio": {
+            "values": cr,
+            "mean":   float(cr.mean()),
+            "min":    float(cr.min()),
+        },
+        "chi2_min": {
+            "values": chi2,
+            "mean":   float(chi2.mean()),
+            "std":    float(chi2.std()),
+        },
+        "worst_spectra": np.argsort(cv)[::-1][:10].tolist(),
+    }
+
+
+def print_batch_multistart_summary(consistency: list) -> None:
+    """
+    Print a formatted summary of batch multi-start consistency metrics.
+
+    Prints both aggregate statistics across all spectra and a table of the
+    worst spectra (highest CV) so that problematic fits can be identified.
+
+    Parameters
+    ----------
+    consistency : list of dict, length T
+        Third output of ``fit_batch_multistart``.
+    """
+    stats = batch_multistart_statistics(consistency)
+    cv    = stats["cv"]
+    cr    = stats["consistency_ratio"]
+
+    sep = "=" * 60
+    print(sep)
+    print("        BATCH MULTI-START CONSISTENCY SUMMARY")
+    print(sep)
+    print(f"  Spectra:              {stats['n_spectra']}")
+    print(f"  Starts per spectrum:  {stats['n_starts']}")
+    print()
+    print(f"  CV  — mean: {cv['mean']:.4f}   std: {cv['std']:.4f}   max: {cv['max']:.4f}")
+    print(f"        fraction with CV >= 0.20 (poor): {cv['fraction_poor']:.1%}")
+    print()
+    print(f"  Consistency ratio — mean: {cr['mean']:.2%}   min: {cr['min']:.2%}")
+    print()
+    print(f"  {'Spectrum':>8}  {'CV':>8}  {'Consist.':>10}  {'Best chi2':>12}  {'Assessment'}")
+    print(f"  {'-'*58}")
+    for idx in stats["worst_spectra"]:
+        c = consistency[idx]
+        if c["cv"] < 0.05:
+            label = "excellent"
+        elif c["cv"] < 0.10:
+            label = "good"
+        elif c["cv"] < 0.20:
+            label = "fair"
+        else:
+            label = "poor"
+        print(f"  {idx:>8}  {c['cv']:>8.4f}  {c['consistency_ratio']:>10.2%}  "
+              f"{c['min']:>12.4e}  {label}")
+    print(sep)
+
+
+# ---------------------------------------------------------------------------
 # Time-series analysis
 # ---------------------------------------------------------------------------
 
