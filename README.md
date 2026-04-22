@@ -12,9 +12,22 @@ Electrochemical impedance spectroscopy measures a complex-valued impedance Z(ω)
 Z(ω) = P(s) / Q(s)
 
 where:
-  s = √(i·ω)
   P(s) = a₀ + a₁s + a₂s² + ... + aₙsⁿ   (numerator, order n)
   Q(s) = 1  + b₁s + b₂s² + ... + bₘsᵐ   (denominator, order m)
+```
+
+The library supports two choices for the complex variable `s`:
+
+| Variable | Definition | When to use |
+|---|---|---|
+| `"sqrt_jw"` (default) | s = √(j·ω) | Systems with Warburg diffusion (bounded or semi-infinite). Integer powers of s give half-integer powers of j·ω, naturally capturing the √ω frequency dependence of diffusion. |
+| `"jw"` | s = j·ω | Systems without Warburg diffusion, where a standard FRF polynomial is more appropriate. |
+
+The variable is selected when creating the model and is stored alongside the fit results so it is restored automatically on load:
+
+```python
+model = make_lmfit_model(num_order=6)                # sqrt_jw (default, Warburg)
+model = make_lmfit_model(num_order=6, variable="jw") # standard FRF
 ```
 
 The leading denominator coefficient is fixed to 1 to make the model identifiable — without this constraint the numerator and denominator can scale arbitrarily while their ratio stays constant. Numerator and denominator orders `n` and `m` can in principle differ; for electrochemical systems `n = m` is the standard choice and the library default.
@@ -32,6 +45,7 @@ The model order must be chosen by the user, typically by sweeping over several v
 ## Features
 
 - Rational polynomial models of any order, with independent numerator and denominator orders
+- Two polynomial basis options: `sqrt_jw` (Warburg diffusion, default) and `jw` (standard FRF)
 - L1-regularized least-squares fitting via `lmfit`
 - Four fitting strategies: single spectrum, multi-start, sequential, simultaneous
 - Structured save/load for all fit types, with `metadata.json` for session identification
@@ -239,7 +253,7 @@ results, fits = fit_sequential(
 )
 ```
 
-### 4. Simultaneous fit
+### 5. Simultaneous fit
 
 Jointly optimizes all spectra in a single minimization run with temporal smoothness penalties on parameter evolution. See [Notes on the simultaneous fit](#notes-on-the-simultaneous-fit) for the output structure and statistics caveat.
 
@@ -460,7 +474,7 @@ Any extra keyword arguments beyond `method` are forwarded to the underlying solv
 
 **Positive parameter constraint** — the log-space transformation requires all parameter values to be strictly positive. Initial parameters must have positive values (set `min > 0`). This is not a limitation for typical EIS rational polynomial models.
 
-**Model not serialized** — saved sessions store `num_order` and `den_order` in `metadata.json`. The model is recreated with `make_lmfit_model` on load, rather than serializing the model object. This avoids binary serialization fragility and keeps saved sessions fully human-readable.
+**Model not serialized** — saved sessions store `num_order`, `den_order`, and `poly_variable` in `metadata.json`. The model is recreated with `make_lmfit_model` on load, rather than serializing the model object. This avoids binary serialization fragility and keeps saved sessions fully human-readable. Sessions saved before the `variable` parameter was added default to `"sqrt_jw"` on load.
 
 **Asymmetric polynomial orders** — `make_lmfit_model(num_order, den_order)` supports different numerator and denominator orders. `den_order` defaults to `num_order` when not specified, which is the standard choice for electrochemical systems.
 
