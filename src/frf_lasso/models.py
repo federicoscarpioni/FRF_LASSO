@@ -27,7 +27,7 @@ import numpy as np
 import lmfit
 
 
-def rational_poly(freq, a_coeffs, b_coeffs):
+def rational_poly(freq, a_coeffs, b_coeffs, poly_variable="sqrt_jw"):
     """
     Evaluate a rational polynomial impedance model at given frequencies.
 
@@ -35,7 +35,16 @@ def rational_poly(freq, a_coeffs, b_coeffs):
 
         Z(freq) = P(s) / Q(s)
 
-    where  s = sqrt(i * freq)  and:
+    where ``s`` depends on ``poly_variable``:
+
+        ``"sqrt_jw"`` (default) — s = sqrt(j * freq)
+            Natural variable for systems with Warburg diffusion; integer
+            powers of s give half-integer powers of j*freq.
+
+        ``"jw"``                — s = j * freq
+            Standard FRF variable for systems without Warburg diffusion.
+
+    And:
 
         P(s) = a0 + a1*s + a2*s^2 + ... + an*s^n
         Q(s) = 1  + b1*s + b2*s^2 + ... + bm*s^m
@@ -58,6 +67,10 @@ def rational_poly(freq, a_coeffs, b_coeffs):
         Numerator coefficients [a0, a1, ..., an].
     b_coeffs : array_like, shape (m,)
         Denominator coefficients [b1, b2, ..., bm].
+    poly_variable : {"sqrt_jw", "jw"}
+        Complex variable used to build the polynomial basis.
+        ``"sqrt_jw"`` (default) for Warburg-diffusion systems;
+        ``"jw"`` for standard FRF systems.
 
     Returns
     -------
@@ -68,7 +81,15 @@ def rational_poly(freq, a_coeffs, b_coeffs):
     a = np.asarray(a_coeffs, dtype=complex)
     b = np.asarray(b_coeffs, dtype=complex)
 
-    s = np.sqrt(1j * freq)                               # shape (N,)
+    if poly_variable == "sqrt_jw":
+        s = np.sqrt(1j * freq)
+    elif poly_variable == "jw":
+        s = 1j * freq
+    else:
+        raise ValueError(
+            f"poly_variable must be 'sqrt_jw' or 'jw', got {poly_variable!r}"
+        )
+                                                          # shape (N,)
 
     # Numerator: sum over k=0..n of a_k * s^k
     a_powers = s[:, None] ** np.arange(len(a))          # shape (N, n+1)
@@ -81,7 +102,7 @@ def rational_poly(freq, a_coeffs, b_coeffs):
     return numerator / denominator
 
 
-def make_lmfit_model(num_order, den_order=None):
+def make_lmfit_model(num_order, den_order=None, variable="sqrt_jw"):
     """
     Create an lmfit Model for a rational polynomial of given order(s).
 
@@ -99,6 +120,17 @@ def make_lmfit_model(num_order, den_order=None):
     den_order : int or None, optional
         Denominator polynomial order (must be >= 1). Defaults to ``num_order``
         when None, which is the standard choice for electrochemical systems.
+    variable : {"sqrt_jw", "jw"}, optional
+        Complex variable used to build the polynomial basis.
+
+        ``"sqrt_jw"`` (default) — s = sqrt(j * freq).  Use for systems
+        exhibiting Warburg diffusion (bounded or semi-infinite).
+
+        ``"jw"`` — s = j * freq.  Use for systems without Warburg diffusion
+        where a standard FRF polynomial is more appropriate.
+
+        The choice is stored on the model as ``model._poly_variable`` and
+        is automatically saved and restored by the ``io`` save/load functions.
 
     Returns
     -------
@@ -114,6 +146,9 @@ def make_lmfit_model(num_order, den_order=None):
 
     >>> # Asymmetric case: order-6 numerator, order-4 denominator
     >>> model = make_lmfit_model(num_order=6, den_order=4)
+
+    >>> # Standard FRF (no Warburg diffusion)
+    >>> model = make_lmfit_model(num_order=6, variable="jw")
     """
     if den_order is None:
         den_order = num_order
@@ -124,13 +159,19 @@ def make_lmfit_model(num_order, den_order=None):
             f"got num_order={num_order}, den_order={den_order}"
         )
 
+    if variable not in ("sqrt_jw", "jw"):
+        raise ValueError(
+            f"variable must be 'sqrt_jw' or 'jw', got {variable!r}"
+        )
+
     a_names = [f"a{i}" for i in range(num_order + 1)]      # a0 … a_num_order
     b_names = [f"b{i}" for i in range(1, den_order + 1)]   # b1 … b_den_order
 
+    var_suffix = "" if variable == "sqrt_jw" else "_jw"
     if num_order == den_order:
-        func_name = f"rational_poly{num_order}"
+        func_name = f"rational_poly{num_order}{var_suffix}"
     else:
-        func_name = f"rational_poly_n{num_order}_m{den_order}"
+        func_name = f"rational_poly_n{num_order}_m{den_order}{var_suffix}"
 
     # lmfit introspects the function signature to discover parameter names.
     # A **kwargs signature does not satisfy this check in lmfit >= 1.3, so we
@@ -142,10 +183,12 @@ def make_lmfit_model(num_order, den_order=None):
         f"def {func_name}(freq, {sig}):\n"
         f"    a = np.array([{a_list}])\n"
         f"    b = np.array([{b_list}])\n"
-        f"    return rational_poly(freq, a, b)\n"
+        f"    return rational_poly(freq, a, b, poly_variable='{variable}')\n"
     )
     _ns = {"np": np, "rational_poly": rational_poly}
     exec(src, _ns)  # noqa: S102
     _model_func = _ns[func_name]
 
-    return lmfit.Model(_model_func, independent_vars=["freq"])
+    model = lmfit.Model(_model_func, independent_vars=["freq"])
+    model._poly_variable = variable
+    return model
