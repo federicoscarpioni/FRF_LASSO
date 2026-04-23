@@ -253,7 +253,7 @@ def fit_sequential(
           spectrum.
         - 2D array, shape (N, T) — column t is used for spectrum t.
           Required when using data-dependent strategies such as modulus
-          weighting (``1 / |Z_t|^0.5``), since those vary per spectrum.
+          weighting (``1 / |Z_t|``), since those vary per spectrum.
 
         See module docstring for weighting strategy guidance.
     reg_factor : float
